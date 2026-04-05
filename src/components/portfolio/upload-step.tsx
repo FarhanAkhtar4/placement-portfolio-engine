@@ -291,7 +291,7 @@ export function UploadStep() {
             </p>
             {isApiError && error.code === "AUTH_INVALID" && (
               <p className="text-xs mt-1.5 text-muted-foreground">
-                Set the <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">ZAI_API_KEY</code> environment variable in your deployment settings and redeploy.
+                Set the <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">Z_AI_BASE_URL</code> and <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">Z_AI_API_KEY</code> environment variables in your deployment settings and redeploy.
               </p>
             )}
           </div>

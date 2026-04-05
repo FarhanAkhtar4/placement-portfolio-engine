@@ -23,7 +23,7 @@ const ERROR_CONFIG: Record<
     icon: KeyRound,
     title: "AI Service Not Configured",
     description:
-      "The AI API key is missing or invalid. Set the ZAI_API_KEY environment variable to enable resume processing.",
+      "The AI service is not configured. Set the Z_AI_BASE_URL and Z_AI_API_KEY environment variables in your deployment settings.",
     color: "text-destructive",
   },
   CONNECTION_FAILED: {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import ZAI from "z-ai-web-dev-sdk";
+import { createZAI } from "@/lib/ai";
 
 const SYSTEM_PROMPT = `You are a senior technical recruiter and career strategist who specializes in optimizing student and early-career profiles for maximum recruiter impact.
 
@@ -67,7 +67,7 @@ function categorizeError(error: unknown): {
     return {
       code: "AUTH_INVALID",
       message:
-        "AI API key is invalid or not configured. Set the ZAI_API_KEY environment variable to fix this.",
+        "AI service not configured. Set Z_AI_BASE_URL and Z_AI_API_KEY environment variables in your Vercel project settings.",
       httpStatus: 503,
     };
   }
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
 
     let zai;
     try {
-      zai = await ZAI.create();
+      zai = await createZAI();
     } catch (initErr) {
       const categorized = categorizeError(initErr);
       return NextResponse.json(
