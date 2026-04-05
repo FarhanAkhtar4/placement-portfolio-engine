@@ -2,6 +2,8 @@
 
 Convert your resume into a **recruiter-optimized portfolio website** powered by AI.
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/FarhanAkhtar4/placement-portfolio-engine)
+
 ## Features
 
 - **PDF Resume Upload** — Drag & drop your resume, validated and parsed automatically
