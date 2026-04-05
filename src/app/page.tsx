@@ -6,6 +6,7 @@ import { UploadStep } from "@/components/portfolio/upload-step";
 import { ProcessingStep } from "@/components/portfolio/processing-step";
 import { PortfolioEditor } from "@/components/portfolio/portfolio-editor";
 import { DeployStep } from "@/components/portfolio/deploy-step";
+import { ApiStatusBanner } from "@/components/portfolio/api-status-banner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 
@@ -52,6 +53,9 @@ export default function Home() {
           )}
         </div>
       </header>
+
+      {/* API Status Banner — domain-level error */}
+      <ApiStatusBanner />
 
       {/* Step indicator */}
       {currentStep !== "processing" && (

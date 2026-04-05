@@ -46,6 +46,85 @@ You MUST return ONLY valid JSON matching this exact schema. NO extra text, NO ma
 
 CRITICAL: Return ONLY the JSON object. Do not wrap in code blocks. Do not add explanations.`;
 
+function categorizeError(error: unknown): {
+  code: string;
+  message: string;
+  httpStatus: number;
+} {
+  const err = error instanceof Error ? error : new Error(String(error));
+  const msg = err.message.toLowerCase();
+
+  if (
+    msg.includes("unauthorized") ||
+    msg.includes("authentication") ||
+    msg.includes("invalid api key") ||
+    msg.includes("invalid_key") ||
+    msg.includes("401") ||
+    msg.includes("api_key") ||
+    msg.includes("apikey") ||
+    msg.includes("credentials")
+  ) {
+    return {
+      code: "AUTH_INVALID",
+      message:
+        "AI API key is invalid or not configured. Set the ZAI_API_KEY environment variable to fix this.",
+      httpStatus: 503,
+    };
+  }
+
+  if (
+    msg.includes("timeout") ||
+    msg.includes("timed out") ||
+    msg.includes("econnrefused") ||
+    msg.includes("econnreset") ||
+    msg.includes("enotfound") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network")
+  ) {
+    return {
+      code: "CONNECTION_FAILED",
+      message:
+        "Could not reach the AI service. Check your network connection or try again later.",
+      httpStatus: 502,
+    };
+  }
+
+  if (
+    msg.includes("rate limit") ||
+    msg.includes("429") ||
+    msg.includes("too many requests") ||
+    msg.includes("quota")
+  ) {
+    return {
+      code: "RATE_LIMITED",
+      message:
+        "AI API rate limit exceeded. Please wait a moment and try again.",
+      httpStatus: 429,
+    };
+  }
+
+  if (
+    msg.includes("insufficient") ||
+    msg.includes("payment") ||
+    msg.includes("billing") ||
+    msg.includes("402") ||
+    msg.includes("credits")
+  ) {
+    return {
+      code: "QUOTA_EXCEEDED",
+      message:
+        "AI API quota exceeded or billing issue. Please check your plan and credits.",
+      httpStatus: 402,
+    };
+  }
+
+  return {
+    code: "UNKNOWN",
+    message: `AI processing failed: ${err.message}`,
+    httpStatus: 500,
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -53,39 +132,65 @@ export async function POST(request: NextRequest) {
 
     if (!text || typeof text !== "string") {
       return NextResponse.json(
-        { success: false, error: "Resume text is required" },
+        { success: false, error: "Resume text is required", code: "INVALID_INPUT" },
         { status: 400 }
       );
     }
 
     if (text.length < 50) {
       return NextResponse.json(
-        { success: false, error: "Resume text is too short to process" },
+        { success: false, error: "Resume text is too short to process", code: "INVALID_INPUT" },
         { status: 400 }
       );
     }
 
-    const zai = await ZAI.create();
+    let zai;
+    try {
+      zai = await ZAI.create();
+    } catch (initErr) {
+      const categorized = categorizeError(initErr);
+      return NextResponse.json(
+        {
+          success: false,
+          error: categorized.message,
+          code: categorized.code,
+        },
+        { status: categorized.httpStatus }
+      );
+    }
 
-    const completion = await zai.chat.completions.create({
-      messages: [
+    let completion;
+    try {
+      completion = await zai.chat.completions.create({
+        messages: [
+          {
+            role: "assistant",
+            content: SYSTEM_PROMPT,
+          },
+          {
+            role: "user",
+            content: `Here is the resume text to analyze and optimize:\n\n---\n${text}\n---\n\nExtract and optimize all information into the required JSON format. Remember: STRICT JSON ONLY, no extra text.`,
+          },
+        ],
+        thinking: { type: "disabled" },
+      });
+    } catch (callErr) {
+      const categorized = categorizeError(callErr);
+      return NextResponse.json(
         {
-          role: "assistant",
-          content: SYSTEM_PROMPT,
+          success: false,
+          error: categorized.message,
+          code: categorized.code,
         },
-        {
-          role: "user",
-          content: `Here is the resume text to analyze and optimize:\n\n---\n${text}\n---\n\nExtract and optimize all information into the required JSON format. Remember: STRICT JSON ONLY, no extra text.`,
-        },
-      ],
-      thinking: { type: "disabled" },
-    });
+        { status: categorized.httpStatus }
+      );
+    }
 
     const rawContent = completion.choices[0]?.message?.content;
 
     if (!rawContent) {
       return NextResponse.json(
-        { success: false, error: "AI returned an empty response" },
+        { success: false, error: "AI returned an empty response", code: "EMPTY_RESPONSE" },
         { status: 500 }
       );
     }
@@ -98,6 +203,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: "Failed to parse AI response as JSON",
+          code: "PARSE_ERROR",
           rawContent,
         },
         { status: 500 }
@@ -113,11 +219,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Resume processing error:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to process resume";
+    const categorized = categorizeError(error);
     return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
+      {
+        success: false,
+        error: categorized.message,
+        code: categorized.code,
+      },
+      { status: categorized.httpStatus }
     );
   }
 }
@@ -159,7 +268,6 @@ function extractJSON(raw: string): Record<string, unknown> | null {
 }
 
 function validatePortfolioData(data: Record<string, unknown>) {
-  // Ensure all required fields exist with sensible defaults
   return {
     name: typeof data.name === "string" ? data.name.trim() : "Your Name",
     title:

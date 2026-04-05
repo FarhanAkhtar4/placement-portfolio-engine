@@ -6,14 +6,27 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  WifiOff,
+  KeyRound,
 } from "lucide-react";
 import { useCallback, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { usePortfolioStore } from "@/store/portfolio-store";
-import type { ProcessingStatus } from "@/types/portfolio";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_TYPE = "application/pdf";
+
+const API_ERROR_ICONS: Record<string, typeof AlertCircle> = {
+  AUTH_INVALID: KeyRound,
+  CONNECTION_FAILED: WifiOff,
+};
+
+const API_ERROR_TITLES: Record<string, string> = {
+  AUTH_INVALID: "AI Service Not Configured",
+  CONNECTION_FAILED: "AI Service Unreachable",
+  RATE_LIMITED: "Rate Limit Hit",
+  QUOTA_EXCEEDED: "Quota Exceeded",
+};
 
 export function UploadStep() {
   const {
@@ -23,7 +36,10 @@ export function UploadStep() {
     setProcessingStatus,
   } = usePortfolioStore();
   const [dragActive, setDragActive] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    message: string;
+    code?: string;
+  } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -33,12 +49,12 @@ export function UploadStep() {
       setError(null);
 
       if (file.type !== ACCEPTED_TYPE) {
-        setError("Please upload a PDF file only.");
+        setError({ message: "Please upload a PDF file only." });
         return;
       }
 
       if (file.size > MAX_FILE_SIZE) {
-        setError("File is too large. Maximum size is 5MB.");
+        setError({ message: "File is too large. Maximum size is 5MB." });
         return;
       }
 
@@ -86,7 +102,9 @@ export function UploadStep() {
         const processData = await processRes.json();
 
         if (!processData.success) {
-          throw new Error(processData.error || "Failed to process resume");
+          const err = new Error(processData.error || "Failed to process resume");
+          (err as Error & { code?: string }).code = processData.code;
+          throw err;
         }
 
         // Step 3: Optimization done
@@ -114,7 +132,8 @@ export function UploadStep() {
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "An unexpected error occurred";
-        setError(message);
+        const code = (err as Error & { code?: string })?.code || "UNKNOWN";
+        setError({ message, code });
         setCurrentStep("upload");
         setProcessingStatus({
           stage: "error",
@@ -160,6 +179,20 @@ export function UploadStep() {
     [processFile]
   );
 
+  const isApiError =
+    error?.code === "AUTH_INVALID" ||
+    error?.code === "CONNECTION_FAILED" ||
+    error?.code === "RATE_LIMITED" ||
+    error?.code === "QUOTA_EXCEEDED";
+
+  const ErrorIcon = error?.code
+    ? API_ERROR_ICONS[error.code]
+    : AlertCircle;
+
+  const errorTitle = error?.code
+    ? API_ERROR_TITLES[error.code]
+    : undefined;
+
   return (
     <div className="w-full max-w-xl mx-auto">
       <div className="text-center mb-8">
@@ -188,6 +221,7 @@ export function UploadStep() {
               : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
           }
           ${uploading ? "pointer-events-none opacity-60" : ""}
+          ${isApiError ? "pointer-events-none opacity-50 border-destructive/30" : ""}
         `}
       >
         <input
@@ -196,7 +230,7 @@ export function UploadStep() {
           accept=".pdf,application/pdf"
           onChange={handleChange}
           className="hidden"
-          disabled={uploading}
+          disabled={uploading || isApiError}
         />
 
         {uploading ? (
@@ -205,6 +239,20 @@ export function UploadStep() {
             <p className="text-sm font-medium text-muted-foreground">
               Uploading {fileName}...
             </p>
+          </div>
+        ) : isApiError ? (
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div className="rounded-full bg-destructive/10 p-4">
+              <AlertCircle className="size-6 text-destructive" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-destructive">
+                Upload Temporarily Unavailable
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                The AI service is not connected. See the error above for details.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3 text-center">
@@ -224,9 +272,29 @@ export function UploadStep() {
       </div>
 
       {error && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-          <AlertCircle className="size-4 mt-0.5 shrink-0" />
-          <p>{error}</p>
+        <div
+          className={`mt-4 flex items-start gap-3 rounded-lg p-4 text-sm ${
+            isApiError
+              ? "bg-destructive/10 border border-destructive/20"
+              : "bg-destructive/10"
+          } ${isApiError ? "text-destructive" : ""}`}
+        >
+          {ErrorIcon && <ErrorIcon className="size-4 mt-0.5 shrink-0" />}
+          <div className="flex-1 min-w-0">
+            {errorTitle && (
+              <p className="font-semibold text-xs uppercase tracking-wider mb-0.5">
+                {errorTitle}
+              </p>
+            )}
+            <p className={!isApiError ? "text-destructive" : ""}>
+              {error.message}
+            </p>
+            {isApiError && error.code === "AUTH_INVALID" && (
+              <p className="text-xs mt-1.5 text-muted-foreground">
+                Set the <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">ZAI_API_KEY</code> environment variable in your deployment settings and redeploy.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
