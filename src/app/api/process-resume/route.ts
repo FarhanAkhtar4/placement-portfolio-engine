@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createZAI } from "@/lib/ai";
+import { createZAI, withTimeout } from "@/lib/ai";
 
 const SYSTEM_PROMPT = `You are a senior technical recruiter and career strategist who specializes in optimizing student and early-career profiles for maximum recruiter impact.
 
@@ -79,12 +79,18 @@ function categorizeError(error: unknown): {
     msg.includes("econnreset") ||
     msg.includes("enotfound") ||
     msg.includes("fetch failed") ||
-    msg.includes("network")
+    msg.includes("network") ||
+    msg.includes("i/o timeout") ||
+    msg.includes("proxying request") ||
+    msg.includes("dns") ||
+    msg.includes("lookup") ||
+    msg.includes("dial tcp") ||
+    msg.includes("connection_timeout")
   ) {
     return {
       code: "CONNECTION_FAILED",
       message:
-        "Could not reach the AI service. Check your network connection or try again later.",
+        "AI service is unreachable from this environment. The AI endpoint may be on an internal/private network. Set Z_AI_BASE_URL to a publicly accessible URL.",
       httpStatus: 502,
     };
   }
@@ -161,7 +167,8 @@ export async function POST(request: NextRequest) {
 
     let completion;
     try {
-      completion = await zai.chat.completions.create({
+      completion = await withTimeout(
+        zai.chat.completions.create({
         messages: [
           {
             role: "assistant",
@@ -173,7 +180,9 @@ export async function POST(request: NextRequest) {
           },
         ],
         thinking: { type: "disabled" },
-      });
+      }),
+      30000 // 30 second timeout for AI processing
+    );
     } catch (callErr) {
       const categorized = categorizeError(callErr);
       return NextResponse.json(

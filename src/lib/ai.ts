@@ -62,7 +62,43 @@ export async function createZAI(): Promise<ZAIType> {
 
   // Nothing worked — throw a clear error
   throw new Error(
-    "AI SDK not configured. Create a .z-ai-config file in your project root, or set the Z_AI_BASE_URL and Z_AI_API_KEY environment variables. " +
-    "On Vercel: go to Settings → Environment Variables and add Z_AI_BASE_URL and Z_AI_API_KEY."
+    "AI_SDK_NOT_CONFIGURED: Create a .z-ai-config file or set the Z_AI_BASE_URL and Z_AI_API_KEY environment variables. On Vercel: go to Settings > Environment Variables."
   );
+}
+
+/**
+ * Check if the AI service is reachable by making a quick probe request.
+ * Returns true if connected, throws an error with a descriptive message if not.
+ */
+export async function checkAIConnection(timeoutMs: number = 10000): Promise<void> {
+  const zai = await createZAI();
+
+  // Probe with a tiny request and a strict timeout
+  await Promise.race([
+    zai.chat.completions.create({
+      messages: [
+        { role: "assistant", content: "Ping." },
+        { role: "user", content: "ok" },
+      ],
+      thinking: { type: "disabled" },
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("AI_CONNECTION_TIMEOUT")), timeoutMs)
+    ),
+  ]);
+}
+
+/**
+ * Wrap an AI call with a timeout to prevent hanging.
+ */
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("AI_CONNECTION_TIMEOUT: The AI service did not respond within the time limit. It may be unreachable from this environment.")),
+        timeoutMs
+      )
+    ),
+  ]);
 }
