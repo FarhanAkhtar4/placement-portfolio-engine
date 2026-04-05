@@ -8,10 +8,13 @@ import {
   AlertCircle,
   WifiOff,
   KeyRound,
+  PenLine,
+  Sparkles,
 } from "lucide-react";
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { usePortfolioStore } from "@/store/portfolio-store";
+import { ManualEntryStep } from "./manual-entry-step";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_TYPE = "application/pdf";
@@ -28,6 +31,14 @@ const API_ERROR_TITLES: Record<string, string> = {
   QUOTA_EXCEEDED: "Quota Exceeded",
 };
 
+interface ApiStatus {
+  status: "connected" | "error";
+  code: string;
+  message: string;
+}
+
+type EntryMode = "choose" | "upload" | "manual";
+
 export function UploadStep() {
   const {
     setCurrentStep,
@@ -35,6 +46,7 @@ export function UploadStep() {
     setPortfolioData,
     setProcessingStatus,
   } = usePortfolioStore();
+  const [mode, setMode] = useState<EntryMode>("choose");
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<{
     message: string;
@@ -42,7 +54,24 @@ export function UploadStep() {
   } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Check API status on mount
+  useEffect(() => {
+    fetch("/api/check-api")
+      .then((r) => r.json())
+      .then((data: ApiStatus) => setApiStatus(data))
+      .catch(() =>
+        setApiStatus({
+          status: "error",
+          code: "CONNECTION_FAILED",
+          message: "",
+        })
+      );
+  }, []);
+
+  const isAiAvailable = apiStatus?.status === "connected";
 
   const processFile = useCallback(
     async (file: File) => {
@@ -102,7 +131,9 @@ export function UploadStep() {
         const processData = await processRes.json();
 
         if (!processData.success) {
-          const err = new Error(processData.error || "Failed to process resume");
+          const err = new Error(
+            processData.error || "Failed to process resume"
+          );
           (err as Error & { code?: string }).code = processData.code;
           throw err;
         }
@@ -132,7 +163,8 @@ export function UploadStep() {
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "An unexpected error occurred";
-        const code = (err as Error & { code?: string })?.code || "UNKNOWN";
+        const code =
+          (err as Error & { code?: string })?.code || "UNKNOWN";
         setError({ message, code });
         setCurrentStep("upload");
         setProcessingStatus({
@@ -193,125 +225,238 @@ export function UploadStep() {
     ? API_ERROR_TITLES[error.code]
     : undefined;
 
-  return (
-    <div className="w-full max-w-xl mx-auto">
-      <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold tracking-tight mb-2">
-          Upload Your Resume
-        </h2>
-        <p className="text-muted-foreground">
-          Drop your PDF resume and we&apos;ll convert it into a
-          recruiter-optimized portfolio website.
-        </p>
-      </div>
+  // Manual entry mode
+  if (mode === "manual") {
+    return <ManualEntryStep />;
+  }
 
-      <div
-        onDragEnter={handleDrag}
-        onDragLeave={handleDrag}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
-        className={`
-          relative flex flex-col items-center justify-center w-full min-h-[240px] p-8
-          border-2 border-dashed rounded-xl cursor-pointer
-          transition-all duration-200 ease-in-out
-          ${
-            dragActive
-              ? "border-primary bg-primary/5 scale-[1.01]"
-              : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
-          }
-          ${uploading ? "pointer-events-none opacity-60" : ""}
-          ${isApiError ? "pointer-events-none opacity-50 border-destructive/30" : ""}
-        `}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".pdf,application/pdf"
-          onChange={handleChange}
-          className="hidden"
-          disabled={uploading || isApiError}
-        />
+  // Upload mode
+  if (mode === "upload") {
+    return (
+      <div className="w-full max-w-xl mx-auto">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold tracking-tight mb-2">
+            Upload Your Resume
+          </h2>
+          <p className="text-muted-foreground">
+            Drop your PDF resume and we&apos;ll convert it into a
+            recruiter-optimized portfolio website.
+          </p>
+        </div>
 
-        {uploading ? (
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="size-10 text-primary animate-spin" />
-            <p className="text-sm font-medium text-muted-foreground">
-              Uploading {fileName}...
-            </p>
-          </div>
-        ) : isApiError ? (
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="rounded-full bg-destructive/10 p-4">
-              <AlertCircle className="size-6 text-destructive" />
+        <div
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+          className={`
+            relative flex flex-col items-center justify-center w-full min-h-[240px] p-8
+            border-2 border-dashed rounded-xl cursor-pointer
+            transition-all duration-200 ease-in-out
+            ${
+              dragActive
+                ? "border-primary bg-primary/5 scale-[1.01]"
+                : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+            }
+            ${uploading ? "pointer-events-none opacity-60" : ""}
+            ${isApiError ? "pointer-events-none opacity-50 border-destructive/30" : ""}
+          `}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            onChange={handleChange}
+            className="hidden"
+            disabled={uploading || isApiError}
+          />
+
+          {uploading ? (
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="size-10 text-primary animate-spin" />
+              <p className="text-sm font-medium text-muted-foreground">
+                Uploading {fileName}...
+              </p>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-destructive">
-                Upload Temporarily Unavailable
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                The AI service is not connected. See the error above for details.
-              </p>
+          ) : isApiError ? (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="rounded-full bg-destructive/10 p-4">
+                <AlertCircle className="size-6 text-destructive" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-destructive">
+                  Upload Temporarily Unavailable
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The AI service is not connected. See the error banner above
+                  for details.
+                </p>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="rounded-full bg-muted p-4">
-              <Upload className="size-6 text-muted-foreground" />
+          ) : (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="rounded-full bg-muted p-4">
+                <Upload className="size-6 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">
+                  Drag & drop your PDF resume here
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  or click to browse — PDF only, max 5MB
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold">
-                Drag & drop your PDF resume here
+          )}
+        </div>
+
+        {error && (
+          <div
+            className={`mt-4 flex items-start gap-3 rounded-lg p-4 text-sm ${
+              isApiError
+                ? "bg-destructive/10 border border-destructive/20"
+                : "bg-destructive/10"
+            } ${isApiError ? "text-destructive" : ""}`}
+          >
+            {ErrorIcon && <ErrorIcon className="size-4 mt-0.5 shrink-0" />}
+            <div className="flex-1 min-w-0">
+              {errorTitle && (
+                <p className="font-semibold text-xs uppercase tracking-wider mb-0.5">
+                  {errorTitle}
+                </p>
+              )}
+              <p className={!isApiError ? "text-destructive" : ""}>
+                {error.message}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                or click to browse — PDF only, max 5MB
-              </p>
+              {isApiError && error.code === "AUTH_INVALID" && (
+                <p className="text-xs mt-1.5 text-muted-foreground">
+                  Set the{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    Z_AI_BASE_URL
+                  </code>{" "}
+                  and{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    Z_AI_API_KEY
+                  </code>{" "}
+                  environment variables.
+                </p>
+              )}
             </div>
           </div>
         )}
+
+        <div className="mt-4 flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMode("choose")}
+            className="text-xs text-muted-foreground"
+          >
+            Back to options
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Choose mode — show two cards
+  return (
+    <div className="w-full max-w-2xl mx-auto">
+      <div className="text-center mb-8">
+        <h2 className="text-2xl font-bold tracking-tight mb-2">
+          Create Your Portfolio
+        </h2>
+        <p className="text-muted-foreground">
+          Choose how you&apos;d like to build your portfolio website.
+        </p>
       </div>
 
-      {error && (
-        <div
-          className={`mt-4 flex items-start gap-3 rounded-lg p-4 text-sm ${
-            isApiError
-              ? "bg-destructive/10 border border-destructive/20"
-              : "bg-destructive/10"
-          } ${isApiError ? "text-destructive" : ""}`}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {/* AI Upload Card */}
+        <button
+          onClick={() => setMode("upload")}
+          disabled={!isAiAvailable}
+          className={`
+            group relative flex flex-col items-start gap-3 rounded-xl border-2 p-6 text-left
+            transition-all duration-200
+            ${
+              isAiAvailable
+                ? "border-border hover:border-primary/50 hover:bg-muted/30 cursor-pointer"
+                : "border-muted-foreground/10 opacity-50 cursor-not-allowed"
+            }
+          `}
         >
-          {ErrorIcon && <ErrorIcon className="size-4 mt-0.5 shrink-0" />}
-          <div className="flex-1 min-w-0">
-            {errorTitle && (
-              <p className="font-semibold text-xs uppercase tracking-wider mb-0.5">
-                {errorTitle}
-              </p>
-            )}
-            <p className={!isApiError ? "text-destructive" : ""}>
-              {error.message}
-            </p>
-            {isApiError && error.code === "AUTH_INVALID" && (
-              <p className="text-xs mt-1.5 text-muted-foreground">
-                Set the <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">Z_AI_BASE_URL</code> and <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">Z_AI_API_KEY</code> environment variables in your deployment settings and redeploy.
-              </p>
-            )}
+          <div
+            className={`rounded-lg p-2.5 ${
+              isAiAvailable
+                ? "bg-primary/10 text-primary"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            <Sparkles className="size-5" />
           </div>
-        </div>
-      )}
+          <div className="flex-1">
+            <h3 className="font-semibold text-sm mb-1">
+              AI-Powered Upload
+              {!isAiAvailable && (
+                <span className="ml-1.5 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  Unavailable
+                </span>
+              )}
+            </h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Upload your PDF resume and let AI extract, optimize, and structure
+              your content automatically.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <FileText className="size-3" />
+            <span>PDF resume</span>
+            <CheckCircle2 className="size-3" />
+            <span>AI-optimized</span>
+          </div>
+          {!isAiAvailable && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/60">
+              <p className="text-xs text-muted-foreground text-center px-4">
+                AI service is not connected
+              </p>
+            </div>
+          )}
+        </button>
 
-      <div className="mt-6 flex items-center justify-center gap-4 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <FileText className="size-3.5" />
-          <span>PDF format</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <CheckCircle2 className="size-3.5" />
-          <span>AI-optimized output</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Upload className="size-3.5" />
-          <span>One-click deploy</span>
-        </div>
+        {/* Manual Entry Card */}
+        <button
+          onClick={() => setMode("manual")}
+          className="group flex flex-col items-start gap-3 rounded-xl border-2 border-border p-6 text-left transition-all duration-200 hover:border-primary/50 hover:bg-muted/30 cursor-pointer"
+        >
+          <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+            <PenLine className="size-5" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-sm mb-1">
+              Manual Entry
+              <span className="ml-1.5 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                Always available
+              </span>
+            </h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Enter your details directly — name, skills, projects, and contact
+              info. Works everywhere, no AI needed.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Upload className="size-3" />
+            <span>No file needed</span>
+            <CheckCircle2 className="size-3" />
+            <span>Works offline</span>
+          </div>
+        </button>
       </div>
+
+      <p className="text-center text-xs text-muted-foreground mt-6">
+        Both options let you fully customize your portfolio before deploying.
+      </p>
     </div>
   );
 }
